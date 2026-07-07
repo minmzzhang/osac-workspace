@@ -1,6 +1,6 @@
 # OSAC Workspace
 
-Meta-workspace that bootstraps all OSAC (Open Sovereign AI Cloud) component repos for cross-component development, testing, and AI-assisted workflows. Primary languages: Go, YAML, Python. Primary tools: kubectl, jira CLI, gh CLI.
+Meta-workspace that bootstraps all OSAC (Open Sovereign AI Cloud) component repos for cross-component development, testing, and AI-assisted workflows. OSAC is a fulfillment system for provisioning Kubernetes clusters and compute instances with networking capabilities. Primary languages: Go, YAML, Python. Primary tools: kubectl, jira CLI, gh CLI.
 
 ## Critical Rules
 
@@ -124,12 +124,13 @@ Failing to update `osac-installer` after cross-component changes causes CI failu
 
 ## Enhancement Proposals
 
-OSAC uses a two-stage flow for enhancement proposals, with project-level template overrides in `.design/templates/`.
+OSAC uses the flightctl ai-workflows PRD and design skills with project-level template overrides in `.design/templates/`. The two-stage flow produces a PRD followed by a design document.
 
 ### Docs Repo
 
-- Both PRD and design documents publish to the `enhancement-proposals` repo
+- Both PRD and design workflows publish to the `enhancement-proposals` repo
 - Local path: `./enhancement-proposals/`
+- When the publish phase asks for the docs repo, provide this path
 
 ### File Path Conventions
 
@@ -143,6 +144,13 @@ OSAC uses a two-stage flow for enhancement proposals, with project-level templat
 
 Push to the `fork` remote in the enhancement-proposals repo, not `origin`. PRs go from `fork/<branch>` to `origin/main`.
 
+### Feature Dimensions Context
+
+Both PRD and design ingest phases must read all files in `.design/context/`:
+
+- **`osac-dimensions.md`** — Cross-cutting dimensions (services, personas, tenant onboarding, inventory, provisioning, networking, storage, installation, E2E testing, documentation, UI) that every OSAC feature must address. Use it to guide clarifying questions during PRD clarify and persona/user-story scope during PRD draft (see Personas and `osac-docs/personas.md`); ensure the design covers all relevant dimensions.
+- **`review-patterns.md`** — Common design reviewer feedback themes, anti-patterns, and the design reference library. Use during PRD draft and design draft to anticipate reviewer expectations.
+
 ### Template Overrides
 
 - Design template: `.design/templates/design.md` (EP format with PRD-aware modifications)
@@ -151,8 +159,8 @@ Push to the `fork` remote in the enhancement-proposals repo, not `origin`. PRs g
 
 ## Jira Conventions
 
-- OSAC uses Jira **Tasks** (not Stories) for implementation work
-- Use `jira` CLI for Jira access (e.g., `jira issue view OSAC-1234 --plain`)
+- OSAC uses Jira **Tasks** (not Stories) for implementation work — in the **implement** workflow, "story" references mean Tasks in this project
+- Use `jira` CLI for Jira access (e.g., `jira issue view OSAC-1234 --plain`), not Jira MCP
 - Planning artifacts live in `.planning/`
 
 ## AI-Assisted Workflows
@@ -209,11 +217,13 @@ Canonical skill definitions live in `skills/` (committed OSAC skills plus bootst
 - **jira-task-management** — Manage Jira issues via jira-cli
 - **capture-tasks-from-meeting-notes** — Extract action items from meeting notes into Jira
 - **generate-status-report** — Generate project status reports from Jira
-- **ep-review** — Review enhancement proposals
+- **design-review** — Review design documents against template requirements and architectural patterns
 - **prd-review** — Review PRDs
 - **milestone-scope** — Milestone readiness assessment
 - **osac-demo-recording** — asciinema API demo recordings
 - **presentation** — Red Hat Marp slide decks
+- **osac-cluster** — Boot and manage OSAC development clusters via cluster-tool
+- **osac-release** — Publish OSAC Helm chart versions across component repos
 
 ## Architecture
 
@@ -299,7 +309,7 @@ CLAUDE.md                  # Claude Code project instructions
 .claude/hooks/             # Workflow hooks
 .design/templates/         # PRD and design template overrides
 .design/context/           # Feature dimensions and review patterns
-skills/                    # AI skills (EP generation, Jira, bug fix, demo recording)
+skills/                    # AI skills (PRD/design workflows, Jira, bug fix, demo recording)
 tools/pr-notify/           # PR dashboard generator
 docs/pr-dashboard/         # Static site for PR dashboard (GitHub Pages)
 .github/workflows/         # CI (pr-dashboard.yml)

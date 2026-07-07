@@ -26,7 +26,4 @@ Workflows from AGENTS.md are invoked with `/skill:phase` syntax in Claude Code:
 
 ## PRD and Design Configuration
 
-Both `/prd:ingest` and `/design:ingest` must read all files in `.design/context/` during their ingest phase:
-
-- **`osac-dimensions.md`** — Cross-cutting dimensions (services, personas, tenant onboarding, inventory, provisioning, networking, storage, installation, E2E testing, documentation, UI) that every OSAC feature must address. Use it to guide clarifying questions during `/prd:clarify` and persona/user-story scope during `/prd:draft` (see § Personas and `osac-docs/personas.md`); ensure the design covers all relevant dimensions.
-- **`review-patterns.md`** — Common EP reviewer feedback themes, anti-patterns, and the EP reference library. Use during `/prd:draft` and `/design:draft` to anticipate reviewer expectations.
+See **Feature Dimensions Context** in `AGENTS.md` — both `/prd:ingest` and `/design:ingest` must read all files in `.design/context/` during their ingest phase.

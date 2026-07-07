@@ -22,14 +22,16 @@ OSAC_SKILLS=(
   jira-task-management
   capture-tasks-from-meeting-notes
   generate-status-report
-  ep-review
+  design-review
   prd-review
   milestone-scope
   osac-demo-recording
   presentation
+  osac-cluster
+  osac-release
 )
 
-AI_WORKFLOW_SKILLS=(bugfix design implement prd)
+AI_WORKFLOW_SKILLS=(bugfix design e2e implement prd)
 
 LINK_CLAUDE=false
 LINK_CURSOR=false

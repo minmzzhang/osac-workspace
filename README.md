@@ -56,6 +56,8 @@ Use `--no-fork` if you only need read-only access or are running in CI.
 | [osac-ui](https://github.com/osac-project/osac-ui) | OSAC UI web console for managing cloud resources |
 | [enhancement-proposals](https://github.com/osac-project/enhancement-proposals) | Design documents and enhancement proposals |
 | [docs](https://github.com/osac-project/docs)[^1] | Architecture documentation, diagrams, and design guides |
+| [host-management-openstack](https://github.com/osac-project/host-management-openstack) | Bare metal host management via OpenStack |
+| [bare-metal-fulfillment-operator](https://github.com/osac-project/bare-metal-fulfillment-operator) | Kubernetes operator for bare metal fulfillment |
 
 [^1]: Cloned into a subdirectory as `osac-docs`
 
@@ -72,7 +74,7 @@ This workspace provides a pre-configured AI-assisted development environment:
 | `tools/link-agent-skills.sh` | Links `.claude/skills`, `.cursor/skills`, and `.gemini/skills` to canonical `skills/` |
 | `.claude/settings.json` | Pre-approved shell commands (git, ls, cat, etc.) so Claude doesn't prompt for routine operations |
 | `AI-assisted-development-workflow.md` | AI-assisted development workflow: Feature → PRD → Design → Jira sync → Implement |
-| `skills/` | Canonical OSAC skill definitions (Jira, PRs, EP review, demos) plus bootstrap-managed ai-workflows symlinks |
+| `skills/` | Canonical OSAC skill definitions (Jira, PRs, design review, release, demos) plus bootstrap-managed ai-workflows symlinks |
 | `.gitignore` | Ignores cloned repos, `.planning/`, `.claude/`, `.cursor/`, `.gemini/`, credentials, editor files, and build artifacts |
 
 ## Distrobox Dev Environment
@@ -188,6 +190,6 @@ See [`AI-assisted-development-workflow.md`](AI-assisted-development-workflow.md)
 
 **Prerequisites:** `./bootstrap.sh` (installs ai-workflows and links agent skill directories), `gh` (authenticated), `jira` CLI, `rg`
 
-After bootstrap, OSAC repo-local skills and ai-workflows (`bugfix`, `implement`, `prd`, `design`) are discoverable via `.claude/skills/`, `.cursor/skills/`, and `.gemini/skills/` (each symlinked to `skills/`). See `AGENTS.md` for agent-specific paths and the full skill list.
+After bootstrap, OSAC repo-local skills and ai-workflows (`bugfix`, `implement`, `prd`, `design`, `e2e`) are discoverable via `.claude/skills/`, `.cursor/skills/`, and `.gemini/skills/` (each symlinked to `skills/`). See `AGENTS.md` for agent-specific paths and the full skill list.
 
 See `AGENTS.md` and `CLAUDE.md` for detailed development instructions and conventions.
