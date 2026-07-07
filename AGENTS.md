@@ -4,6 +4,7 @@ Meta-workspace that bootstraps all OSAC (Open Sovereign AI Cloud) component repo
 
 ## Critical Rules
 
+- **`osac-workspace/` is the project root** — all work happens from here; component docs are loaded via progressive disclosure
 - **Never skip tenant isolation metadata** (`osac.openshift.io/tenant`, `osac.openshift.io/owner-reference` annotations) in new resources
 - **Always `buf lint` before committing** proto changes; regenerate with `buf generate`
 - **Fork-based workflow**: always push to `fork` remote, never to `origin`. PRs go from `fork/<branch>` to `origin/main`
@@ -134,7 +135,9 @@ OSAC uses the flightctl ai-workflows PRD and design skills with project-level te
 
 ### File Path Conventions
 
-- Directory prefix: `enhancements/` (fixed — skip any "release" prompt)
+When publishing PRDs and design documents to the enhancement-proposals repo:
+
+- Skip the "release" question — use `enhancements` as the fixed directory prefix
 - Feature directory: `enhancements/<feature-slug>/` (e.g., `enhancements/storage-network/`)
 - PRD filename: `prd.md`
 - Design (EP) filename: `README.md` (not `design.md` — this is the main EP file)
