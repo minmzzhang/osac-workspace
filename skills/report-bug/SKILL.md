@@ -20,12 +20,39 @@ Collect from conversation context. Ask only if truly ambiguous:
 | Input | Required | Default |
 |-------|----------|---------|
 | Bug summary | Yes | From conversation context |
-| Description / root cause | Yes | From conversation context or investigation |
+| User-visible symptoms | Yes | From conversation context |
 | Steps to reproduce | If known | From conversation context |
 | Epic key | If ambiguous | Ask user — e.g. "Which epic should I link this to?" |
 | Affects version | No | Detect from epic's fixVersion, confirm with user |
 | Label | No | `OSAC` |
+| Attachments | No | Logs, screenshots, or config files from conversation context |
 | Assignee | No | Unassigned — only assign if user specifies |
+
+## Writing Rules
+
+Describe the bug from the user's perspective. Every sentence should describe something a user can see, do, or experience.
+
+**Do:**
+- Describe what the user did (CLI commands, API calls, UI actions)
+- Describe what the user expected to see
+- Describe what actually happened (error messages, wrong behavior, missing data)
+- Use product concepts: cluster, tenant, token, catalog item -- not code concepts
+
+**Do not:**
+- Reference code internals: function/method names, file paths, line numbers, database columns
+- Include sections that analyze why the bug happens or what it affects internally -- those belong in the fix PR, not the bug ticket
+
+## Pre-Creation Check
+
+Before creating the ticket, verify you can answer these with user-facing information:
+
+1. What user action triggers the bug?
+2. What does the user see that is wrong?
+3. What should the user see instead?
+
+If you don't have enough information to answer these, ask the user: "I need more detail to file this bug properly. Can you describe the problem from a user's perspective — what you did, what you expected, and what went wrong?"
+
+Do not create the ticket until you can fill the template.
 
 ## Resolve Affects-Version
 
@@ -41,14 +68,27 @@ Once the epic is known, detect the version before confirming inputs with the use
 3. If no epic — ask the user if they want to set one, listing available versions
 4. If user declines or skips — omit `--affects-version` from the create command
 
+## Formatting Rules
+
+`jira-cli` converts the body to Atlassian Document Format (ADF). Use **Markdown only** -- Jira wiki markup renders incorrectly.
+
+**Use:**
+- `**bold**` for section headers
+- `` `code` `` for inline code
+- `- item` for bullet lists
+- `[text](url)` for links
+- ` ```lang ` fenced blocks for code snippets
+
+Do not use Jira wiki markup (`*bold*`, `{{code}}`, `{code}`, `[text|url]`).
+
 ## Create the Bug
 
 ```bash
 KEY=$(jira issue create -t Bug --project OSAC \
   --summary "<concise bug title>" \
-  --body "**Description of the problem:**
+  --body "**What happened:**
 
-<what is broken>
+<describe the problem>
 
 **How reproducible:**
 
@@ -56,15 +96,19 @@ KEY=$(jira issue create -t Bug --project OSAC \
 
 **Steps to reproduce:**
 
-1. <step>
+- <step>
 
 **Expected result:**
 
-<what should happen>
+<what the user expected to see or experience>
 
 **Actual result:**
 
-<what actually happens>" \
+<what the user actually sees (error messages, wrong output, missing data)>
+
+---
+
+_This bug was reported with AI assistance. Review for accuracy_" \
   --label OSAC \
   --affects-version "<version>" \
   --no-input --raw | jq -r '.key')
@@ -86,6 +130,23 @@ If user specified an assignee (no `--no-input` flag — `assign` does not suppor
 ```bash
 jira issue assign $KEY <assignee>
 ```
+
+### Attach files
+
+If logs, screenshots, or other files came up during the conversation, list them and ask the user which ones to attach. Ask if there is anything else they want to add.
+
+**Do not attach files containing sensitive data (credentials, tokens, keys, secrets, passwords). Read the file content before attaching. If in doubt, ask the user.**
+
+```bash
+curl -s --fail -K - \
+  -H "X-Atlassian-Token: no-check" \
+  -F "file=@<path>" \
+  "https://redhat.atlassian.net/rest/api/3/issue/$KEY/attachments" <<EOF
+user = "$(grep '^login:' ~/.config/.jira/.config.yml | awk '{print $2}'):${JIRA_API_TOKEN}"
+EOF
+```
+
+If the upload fails (missing `$JIRA_API_TOKEN`, auth error, or network issue), skip it and tell the user to attach files manually via the Jira link.
 
 ## Report
 
