@@ -85,7 +85,7 @@ KEY=$(jira issue create -t Feature --project OSAC \
 
 <What is explicitly excluded from this feature>" \
   --label OSAC \
-  --component <component> \
+  --component "<component>" \
   --no-input --raw 2>/dev/null | jq -r '.key')
 ```
 
