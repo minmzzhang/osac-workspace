@@ -192,6 +192,12 @@ something - see [reference.md](reference.md#tag-immutability).
    while doing this (concurrency-group collisions, GHCR package-linking
    chicken-and-egg, forked-repo Actions being disabled by default).
 
+Editing *this skill itself* (not a workflow that uses it)? Run
+[scripts/self-check.sh](scripts/self-check.sh) - it does steps 1-3 above
+against the skill's own embedded template/script/regexes, plus a live
+functional test of `verify-tag-matches-sha.sh` against a real tag, so a
+content edit can't silently break an example without something catching it.
+
 ## Also applies (enforced automatically, not just for workflows)
 
 These aren't workflow-specific but every commit touching a workflow will hit
