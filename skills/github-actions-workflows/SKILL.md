@@ -97,7 +97,11 @@ Run through this for every new or edited workflow file:
       negative number, or non-numeric text flowing into something like
       `date -d "${N} hours ago"` produces a wrong or empty result *silently*
       - the job still reports success, having checked the wrong window (or
-      nothing at all).
+      nothing at all). If the input's scale interacts with another already-
+      known limitation (e.g. an unpaginated `per_page=100` fetch), cap the
+      upper bound too, not just the lower one - document it as a sanity
+      bound against a bad input, not a guarantee, if it can't be derived
+      precisely.
 - [ ] **`curl` exits `0` on 4xx/5xx by default**, and a manually-checked
       `CODE=$(curl -w '%{http_code}' ...)` is separately *not* exempt from
       `set -e` on a *transport*-level failure (DNS, connection reset, TLS) -
