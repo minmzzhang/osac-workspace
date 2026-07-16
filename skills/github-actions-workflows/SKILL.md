@@ -83,7 +83,11 @@ Run through this for every new or edited workflow file:
       field you expect - `jq`'s `.items[]?` turns a missing/wrong-typed
       field into empty output just as readily as a genuinely-empty result,
       so validate the field is actually an array (`jq -e '.items | type ==
-      "array"'`) before trusting "empty" as a real answer.
+      "array"'`) before trusting "empty" as a real answer. Some GitHub
+      endpoints add a *third* way to be wrong on a 200: code search can
+      return `incomplete_results: true` on a server-side timeout with an
+      otherwise well-formed `.items` array - check API-specific
+      completeness fields too, not just the shape.
 - [ ] **When aggregating several steps' status into one summary/notification,
       check `steps.<id>.outcome`, not just `steps.<id>.outputs.*`.** A step
       skipped because an earlier one failed leaves its outputs empty; an
