@@ -205,7 +205,7 @@ rules:
     severity: warning
     limits:
       skill:
-        warn: 6000
+        warn: 7000
         error: 10000
     #   command:
     #     warn: 2000

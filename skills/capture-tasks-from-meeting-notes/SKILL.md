@@ -145,7 +145,7 @@ EOF
 jira issue create -tTask \
   -s "Task description" \
   --template "$BODY" \
-  -P <EPIC-KEY> -a <assignee> -l OSAC --no-input --raw >"$OUT" 2>"$ERR" </dev/null
+  -P <EPIC-KEY> -a <assignee> --no-input --raw >"$OUT" 2>"$ERR" </dev/null
 
 KEY=$(jq -r '.key // empty' "$OUT")
 # On empty key or failure: cat "$ERR" >&2
