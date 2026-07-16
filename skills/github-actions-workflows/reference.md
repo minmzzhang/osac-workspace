@@ -96,6 +96,168 @@ and build in the privileged job" shape unchanged:
   privileged job do only release-specific work (tagging, publishing
   already-built/verified artifacts).
 
+## workflow_dispatch branch restriction
+
+A related but distinct escalation shape from the `workflow_run` one above,
+found on `osac-test-infra` PR #182: `workflow_dispatch` lets anyone with
+write access to the repo pick *any* branch or tag to run the workflow
+against, and GitHub executes *that ref's own copy* of the workflow file -
+not the default branch's. If the job being dispatched is privileged (Vault
+secrets, an org-scoped token, `contents: write`, etc.), this lets that
+person push a modified copy of the workflow to a throwaway branch - e.g.
+with a same-file guard like `if: github.ref == 'refs/heads/main'` simply
+deleted - and then dispatch against that branch to run their version with
+the job's full privileges, bypassing whatever review gate protects the
+default branch.
+
+```yaml
+# INSUFFICIENT - lives in the same file the invoker controls when
+# dispatching against a branch other than main; they'd just remove this
+# line in their own copy before dispatching
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted-with-vault-access
+```
+
+The fix isn't a workflow-file check at all, since *any* check living in the
+dispatched file is subject to the same bypass. Use a GitHub Environment's
+deployment-branch policy instead - it's enforced server-side by GitHub
+based on the *ref being dispatched*, independent of what that ref's copy of
+the workflow file contains:
+
+```yaml
+jobs:
+  audit:
+    environment: audit-privileged  # Settings -> Environments -> Deployment
+                                    # branches and tags -> "Selected branches
+                                    # and tags" -> main only (org-admin action,
+                                    # can't be done from the workflow file)
+    runs-on: self-hosted-with-vault-access
+```
+
+This requires an actual repo-admin step (creating the environment and
+setting its branch policy) that can't be expressed in the workflow file
+itself - call that out explicitly as a follow-up action item rather than
+letting the `environment:` line imply protection that doesn't exist yet
+(an `environment:` referencing a not-yet-created environment is not an
+error and adds no restriction).
+
+`schedule`-triggered runs are unaffected either way - they always run the
+default branch's copy of the workflow regardless of this setting, so this
+control only actually changes `workflow_dispatch` behavior.
+
+## curl failure handling
+
+Two distinct gaps in a script that calls `curl` and checks the result
+itself, both found on `osac-test-infra` PR #182:
+
+**Gap 1: curl exits `0` on HTTP 4xx/5xx by default.** If the call's success
+matters, use `--fail-with-body` (fails the curl invocation itself, body
+still captured for logging) or manually check `-w '%{http_code}'`.
+
+**Gap 2 (separate from Gap 1): a manually-checked status code doesn't cover
+transport failures.** Even after adding `-w '%{http_code}'` to handle Gap 1,
+a plain assignment is *still* subject to `set -e` if curl fails at the
+transport level (DNS resolution, connection refused/reset, TLS handshake) -
+that's a curl exit-code failure, not an HTTP status, so checking the status
+code afterward never happens; the script dies on the assignment itself
+instead:
+
+```bash
+# BAD - transport failure here trips `set -e` before the status check below
+# ever runs, so a network hiccup crashes the whole script instead of
+# landing in the "delete failed" branch
+HTTP_CODE=$(curl -sL -o /dev/null -w '%{http_code}' -X DELETE "$URL")
+if [[ "${HTTP_CODE}" != "204" ]]; then ...
+
+# GOOD - `if ! VAR=$(...)` is exempt from errexit (a plain assignment isn't);
+# --connect-timeout/--max-time stop a hung connection from blocking the job
+if ! HTTP_CODE=$(curl -sL -o /dev/null -w '%{http_code}' -X DELETE \
+  --connect-timeout 10 --max-time 30 "$URL"); then
+  HTTP_CODE="curl-transport-error"
+fi
+if [[ "${HTTP_CODE}" != "204" ]]; then ...
+```
+
+Apply this to *every* curl call in a script that manually checks status,
+not just the one that happens to get flagged first - CodeRabbit caught this
+on `scan-run-logs.sh`'s two calls in one review round, then flagged the
+identical pattern in the sibling script `discover-e2e-runs.sh` (four more
+calls) in the very next round once the diff included it, and the missing
+`--connect-timeout`/`--max-time` half of it a *third* time after that, on
+three more curl calls in `audit-workflow-logs.yml`. Three separate files,
+three separate review rounds, same exact gap each time. Fix the pattern
+everywhere it appears across a PR's changed files in one pass, rather than
+waiting for each file to individually surface in its own review round.
+
+## Fail loud on per-item batch failures
+
+When a script loops over multiple files/items and a *later* step trusts the
+*entire* result set (e.g. `actions/upload-artifact` on a "redacted" logs
+directory, assuming every file in it was actually redacted), a per-item
+failure must abort the whole operation - not log a warning and move on to
+the next item. Found on `osac-test-infra` PR #182's `redact.py`:
+
+```python
+# BAD - looks like defensive error handling, but an unreadable file also
+# couldn't be redacted, and it still ships in the "redacted" directory
+# with its original secret intact
+for path in redacted_dir.rglob("*"):
+    try:
+        text = path.read_text()
+    except OSError:
+        continue  # <- silently ships this file un-redacted
+
+# GOOD - fail the whole script; let the caller's own set -e / status-file
+# contract propagate this as a real failure, not a false "success"
+for path in redacted_dir.rglob("*"):
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        print(f"cannot read {path}, aborting: {exc}", file=sys.stderr)
+        sys.exit(1)
+```
+
+The "skip and continue" instinct makes sense for a *reporting* loop (e.g.
+the cross-repo audit skipping one target's listing failure and continuing
+to the next) - the difference is whether skipping compromises a safety
+guarantee the caller is relying on. Skipping an unscannable *target* just
+means less coverage this run (and is tracked as such, per the fail-closed
+status pattern below); skipping an unredactable *file* inside a batch
+that's about to be uploaded as "the redacted copy" means shipping exactly
+the thing the step exists to prevent.
+
+## Detection vs. remediation status
+
+Finding a problem and successfully acting on it are two operations that can
+fail independently - don't fold them into one status flag. Found on
+`osac-test-infra` PR #182's `scan-run-logs.sh`: gitleaks finding leaked
+secrets (`LEAKS_FOUND=true`) and then successfully deleting the raw logs
+that contained them (`PURGE_OK`) are separate outcomes; a delete-API call
+can fail for reasons that have nothing to do with whether anything was
+found (permissions, a transient 5xx, a transport error). Before this was
+split out, a failed delete still got reported - in both the job summary and
+the audit's tracking-issue body - as "the raw logs have been deleted",
+which is simply false when the delete call failed.
+
+Give remediation its own flag, meaningful only when detection actually
+found something (a clean scan has nothing to remediate, so the flag is
+vacuously `true` in that case - see the `SCAN_OK`/`LEAKS_FOUND`/`PURGE_OK`
+three-way split in `scan-run-logs.sh` for a worked example), and make every
+downstream summary/notification conditional on it rather than assuming the
+remediation step that ran right after detection must have succeeded.
+
+The same principle showed up again one review round later, in a different
+shape: `audit-workflow-logs.yml`'s job summary and tracking-issue body both
+unconditionally linked to an `audit-redacted-logs-*` artifact once findings
+existed, regardless of whether the `actions/upload-artifact` step that was
+supposed to produce it had actually succeeded. "Detection" (finding leaked
+credentials) and "the artifact upload that's supposed to preserve evidence
+of them" are just as independent as "detection" and "purge" were - give the
+upload step an `id`, check `steps.<id>.outcome`, and only promise the
+artifact link when it's actually there.
+
 ## Shared scripts
 
 Copy-pasting the same bash logic into multiple `run:` blocks - especially

@@ -6,8 +6,12 @@ description: Create or edit GitHub Actions workflow files (.github/workflows/*.y
 # GitHub Actions Workflows
 
 Every checklist item below came from an actual multi-round CodeRabbit review
-cycle on OSAC-2185 (5 repos, 4 review rounds each). Apply them proactively -
-don't wait for a reviewer to find them.
+cycle - most from OSAC-2185 (5 repos, 4 review rounds each), the notification/
+status-aggregation/secret-handling/branch-restriction items from OSAC-1684
+(`osac-test-infra` PR #182, a credential-scanning workflow, 3 separate review
+cycles across the initial round, a rebase, and a follow-up fix commit - each
+triggering its own fresh CodeRabbit pass). Apply them proactively - don't
+wait for a reviewer to find them.
 
 ## Checklist
 
@@ -53,6 +57,96 @@ Run through this for every new or edited workflow file:
 - [ ] If a Sigstore/cosign signing requirement is flagged and it's a bigger
       effort than the current change, don't silently skip it - tell the user
       it's out of scope and ask if it should be a follow-up.
+- [ ] **Alert/notify steps need explicit failure semantics, not the implicit
+      `success()` AND.** A bare `if: <condition>` (no `success()`/`failure()`/
+      `always()`) implicitly ANDs with `success()`, so a hard failure in an
+      *earlier* step - exactly the case most worth alerting on - silently
+      skips the very notification meant to catch it:
+      ```
+      # BAD - skipped entirely if the "scan" step hard-fails (not just sets
+      # leaks-found=false)
+      - if: steps.scan.outputs.leaks-found == 'true'
+        run: notify-slack ...
+
+      # GOOD
+      - if: >
+          always() &&
+          (steps.scan.outcome == 'failure' || steps.scan.outputs.leaks-found == 'true')
+        run: notify-slack ...
+      ```
+- [ ] **Don't let "couldn't check" collapse into "checked, clean."** A failed
+      fetch/download/list needs its own distinct status, separate from the
+      actual pass/fail result (e.g. `SCAN_OK=false` vs `LEAKS_FOUND=false`) -
+      otherwise an auth/permission failure silently masquerades as a clean
+      scan to every downstream consumer. This includes the HTTP status
+      *and* the response shape: a 200 doesn't guarantee the body has the
+      field you expect - `jq`'s `.items[]?` turns a missing/wrong-typed
+      field into empty output just as readily as a genuinely-empty result,
+      so validate the field is actually an array (`jq -e '.items | type ==
+      "array"'`) before trusting "empty" as a real answer.
+- [ ] **When aggregating several steps' status into one summary/notification,
+      check `steps.<id>.outcome`, not just `steps.<id>.outputs.*`.** A step
+      skipped because an earlier one failed leaves its outputs empty; an
+      `|| '0'`/`|| 'false'` fallback on that empty output then reads as a
+      clean pass instead of the incomplete result it actually is. Revisit
+      this OR-list every time a new step gets added between detection and
+      the notification - a gate written before that step existed won't
+      automatically cover its failure too.
+- [ ] **Validate untrusted numeric/string input (e.g. a `workflow_dispatch`
+      input) before using it in date/arithmetic logic**, not after. `0`, a
+      negative number, or non-numeric text flowing into something like
+      `date -d "${N} hours ago"` produces a wrong or empty result *silently*
+      - the job still reports success, having checked the wrong window (or
+      nothing at all).
+- [ ] **`curl` exits `0` on 4xx/5xx by default**, and a manually-checked
+      `CODE=$(curl -w '%{http_code}' ...)` is separately *not* exempt from
+      `set -e` on a *transport*-level failure (DNS, connection reset, TLS) -
+      two different gaps, both need closing on any `curl` call whose success
+      matters. See [reference.md](reference.md#curl-failure-handling).
+- [ ] **Inside a composite action, pass data between its own steps via
+      `steps.<id>.outputs`, not `$GITHUB_ENV`.** An env var written there
+      leaks into every later step of the *calling* job (not just this
+      action's own steps) and collides if the action runs more than once in
+      the same job.
+- [ ] **Escape `|` when interpolating dynamic data (log paths, rule IDs,
+      etc.) into a Markdown table** built via `jq`/`echo` for a job summary
+      or issue body - an unescaped pipe in the data breaks the rendered
+      table.
+- [ ] **If a script handles raw secrets locally** (downloaded logs, decrypted
+      files), **clean up the local copy via `trap ... EXIT`**, not just
+      deleting the remote/authoritative copy - otherwise the raw secret
+      still sits on disk, especially relevant on persistent self-hosted
+      runners. This includes *derived* files, not just the original input -
+      a scanning tool's own report (e.g. gitleaks' JSON output) embeds the
+      actual matched secret value just as much as the logs it scanned, and
+      is easy to forget in the trap since it's a byproduct, not something
+      you explicitly downloaded. Never point downstream reporting (job
+      summaries, issue bodies) at that raw report directly either - produce
+      a sanitized copy (drop the secret-value field, keep only what
+      reporting needs) for anything outside the redact/mask/purge steps to
+      read.
+- [ ] **A per-item failure in a batch/loop must abort, not skip-and-continue**,
+      whenever a later step trusts the *entire* result (e.g. uploading a
+      "redacted" directory as an artifact, assuming every file in it really
+      was redacted) - skipping one bad item ships it downstream with
+      whatever the batch was supposed to fix still intact. See
+      [reference.md](reference.md#fail-loud-on-per-item-batch-failures).
+- [ ] **Track detection and remediation as separate outcomes**
+      (e.g. `PURGE_OK` alongside `LEAKS_FOUND`) - don't fold "found a
+      problem" and "successfully fixed it" into one status flag, or a
+      failed fix silently reads as a successful one. See
+      [reference.md](reference.md#detection-vs-remediation-status).
+- [ ] **A same-file `if:` conditional is not a security boundary against ref
+      selection.** For `workflow_dispatch` (or anything else where the
+      invoker picks which ref's copy of the workflow runs), a check like
+      `if: github.ref == 'refs/heads/main'` is trivially bypassed - the
+      invoker controls the exact file being executed when dispatching
+      against their own branch, and would just remove the check in their
+      copy. Use a GitHub Environment's deployment-branch policy instead
+      (`environment: <name>`, restricted to `main` in Settings ->
+      Environments) - that's enforced server-side regardless of the
+      dispatched ref's file content. See
+      [reference.md](reference.md#workflow-dispatch-branch-restriction).
 
 ## The workflow_run gate pattern
 
