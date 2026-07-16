@@ -228,6 +228,30 @@ status pattern below); skipping an unredactable *file* inside a batch
 that's about to be uploaded as "the redacted copy" means shipping exactly
 the thing the step exists to prevent.
 
+The same distinction applies one level down, inside a single API response,
+not just across targets. `discover-e2e-runs.sh` used `jq`'s `select(...)`
+to drop any malformed item out of a search-results array before building
+the target list - which *looks* like the same "skip and continue" as the
+target-level loop, but isn't: a dropped item here has no equivalent of
+`SKIPPED_TARGETS` counting it, so `DISCOVERY_FAILED` stays `false` and the
+result is indistinguishable from "every item was valid." If you don't have
+a per-item tracking counter, treat one malformed item as invalidating the
+*whole* response instead - `jq -e 'all(.items[]?; <shape check>)'` before
+extracting anything, not `select(...)` while extracting:
+
+```bash
+# BAD - one malformed item just vanishes, nothing downstream ever learns
+# an item was dropped
+jq -r '.items[]? | select(.field != null) | ...' "$RESP" | ...
+
+# GOOD - one malformed item invalidates the whole response
+if ! jq -e 'all(.items[]?; (.field | type) == "string")' "$RESP" >/dev/null 2>&1; then
+  DISCOVERY_FAILED=true
+else
+  jq -r '.items[]? | ...' "$RESP" | ...
+fi
+```
+
 ## Detection vs. remediation status
 
 Finding a problem and successfully acting on it are two operations that can
