@@ -20,8 +20,8 @@ portable constructs only — macOS `/bin/bash` is 3.2 (no `mapfile`).
 ## Gather Inputs
 
 Collect from conversation context. Ask only if truly ambiguous — **except**
-for **Requires UI work**, which must always be asked explicitly (never inferred
-from the description).
+for **Requires UI work** and **Fix version**, which must always be asked
+explicitly (never inferred from the description or summary).
 
 | Input | Required | Default |
 |-------|----------|---------|
@@ -30,11 +30,16 @@ from the description).
 | Component | Yes | Infer from context: VMaaS, CaaS, BMaaS, Core, Storage, Connectivity&Fabric, UI, Infrastructure, Enclave |
 | Customer | No | If the feature is driven by a specific customer requirement, note the customer name |
 | Requires UI work | **Yes** | Ask: "Does this feature require UI work?" |
+| Fix version | **Yes** | Propose highest unreleased milestone from Jira (exclude `0.0`); user accepts, picks another, or chooses backlog |
 | Assignee | No | Unassigned — only assign if user specifies |
 | Label | No | `OSAC` |
 
 **Note:** Features are never *children* of epics. After creation, a bootstrap
 epic is created as a *child* of the Feature to track documentation gates.
+
+**Fix version convention:** Only the **Feature** issue receives `fixVersion`.
+Bootstrap epics and gate tasks do not — they inherit scope from the parent
+Feature. This is the single source of truth for `/milestone-scope` reporting.
 
 ## Customer Labeling
 
@@ -90,6 +95,22 @@ Normalize the user's answer to `REQUIRES_UI=yes` or `REQUIRES_UI=no`:
 
 If ambiguous, ask again — do not infer from the description.
 
+### Fix version
+
+Ask explicitly — do not infer from summary text (e.g. `(0.2)` in the title).
+
+1. Run `list_fix_version_suggestions` (see Reusable bash patterns) to fetch
+   unreleased OSAC milestones, excluding `0.0`.
+2. Propose the highest version as default, e.g. "Proposed fix version: **0.3**.
+   Accept, specify another milestone, or choose **backlog** (no fix version)?"
+3. Normalize the user's answer via `validate_fix_version` and store in `FIX_VERSION`:
+   - A valid release name from the suggestion list
+   - `backlog` when the user explicitly says backlog, none, or skip
+4. On `invalid` (including empty input), ask again — do not default to backlog.
+
+Only the Feature receives `fixVersion`. Never set fix version on bootstrap epics
+or gate tasks.
+
 ### Assignee (optional)
 
 If assignee is specified, confirm with the user before create. Use Jira
@@ -112,11 +133,14 @@ Ready to create in Jira:
   Component:   <COMPONENT>
   Customer:    <name or none>
   UI work:     yes | no
+  Fix version: <version> | backlog (unset)
   Labels:      OSAC[, osac-ux, osac-ui if UI work][, customer, customer:<name>]
   Assignee:    <name or unassigned>
 
   Bootstrap epic:  <FEATURE_SUMMARY> - Bootstrap
   Bootstrap tasks: PRD, Design[, UX Design, UI Design if UI work]
+
+  (Bootstrap epic and gate tasks do not receive fix version.)
 
 Proceed? (yes/no)
 ```
@@ -175,6 +199,49 @@ collect_keys_from_jql() {
     KEY_COUNT=$((KEY_COUNT + 1))
     FIRST_KEY=$k
   done < <(list_keys_for_jql "$jql")
+}
+
+# Fetch OSAC fix-version candidates (exclude 0.0 — pre-team legacy bucket).
+# jira release list does NOT support useful --plain output; parse tab format.
+# Columns: ID, NAME, RELEASED, DESCRIPTION
+# Output: one version name per line, newest first (sort -Vr).
+list_fix_version_suggestions() {
+  jira release list -p OSAC 2>/dev/null \
+    | awk -F'\t' 'NR>1 && $2 != "0.0" && $3 == "false" {print $2}' \
+    | sort -Vr
+}
+
+# Validate user-chosen version. Returns: backlog | <version> | invalid
+# backlog only when user explicitly says backlog/none/skip (not empty string).
+validate_fix_version() {
+  local choice
+  choice=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+  case "$choice" in
+    backlog|none|skip) echo "backlog"; return 0 ;;
+    '') echo "invalid"; return 0 ;;
+  esac
+  if list_fix_version_suggestions | grep -Fxq "$1"; then
+    echo "$1"
+  else
+    echo "invalid"
+  fi
+}
+
+# Set fixVersion on Feature when FIX_VERSION is not backlog.
+# Run after require_osac_key on Feature KEY, before assign/bootstrap; use </dev/null>.
+# jira issue edit --fix-version appends; safe on new Features (empty fixVersions).
+apply_feature_fix_version() {
+  local key=$1 version=$2
+  [ "$version" = "backlog" ] && return 0
+  local err
+  err=$(new_temp osac-jira-fixver-err)
+  add_temp "$err"
+  if ! jira issue edit "$key" --fix-version "$version" --no-input 2>"$err" </dev/null; then
+    echo "Fix version edit failed for ${key} (${version}) — set manually:" >&2
+    echo "  jira issue edit ${key} --fix-version \"${version}\" --no-input </dev/null" >&2
+    cat "$err" >&2
+    return 0
+  fi
 }
 ```
 
@@ -276,9 +343,13 @@ jira issue create -t Feature --project OSAC \
 
 KEY=$(jq -r '.key // empty' "$OUT")
 require_osac_key "$KEY" "Feature" "$OUT" "$ERR"
+apply_feature_fix_version "$KEY" "$FIX_VERSION"
 ```
 
 Allow up to 3 minutes for create to complete.
+
+Order after Feature create: **fix version → assign (if any) → bootstrap epic**.
+Do not set `--fix-version` on bootstrap epic or gate task creates.
 
 ### Assign if specified
 
@@ -295,9 +366,12 @@ fi
 
 ## Create Bootstrap Epic
 
-After the Feature is created (and optionally assigned), create a bootstrap epic
-under the Feature. Use `jira issue create -t Epic` — **not** `jira epic create`
+After the Feature is created, fix version is set (when not backlog), and
+optionally assigned, create a bootstrap epic under the Feature. Use
+`jira issue create -t Epic` — **not** `jira epic create`
 (that subcommand has no parent flag).
+
+**Do not** pass `--fix-version` on the bootstrap epic or any gate task.
 
 Set `EPIC_SUMMARY="${FEATURE_SUMMARY} - Bootstrap"` for searches and create.
 
@@ -493,6 +567,7 @@ keys, plus `$ERR` and error JSON from `$OUT`.
 | Invalid summary (JQL/shell unsafe chars, >255 chars) | Reject before confirm; ask user to revise |
 | User declines confirm gate | Stop; no Jira creates |
 | Empty `KEY` after Feature create | Stop; report `$ERR` and error JSON; do not bootstrap |
+| Fix version edit failed after Feature create | Non-fatal; report manual `jira issue edit --fix-version …`; continue bootstrap |
 | Empty `EPIC_KEY` after epic create | Stop; report Feature key and errors; do not create tasks |
 | Epic parent edit slow | Wait up to 3 minutes; do not kill and retry |
 | Epic parent ≠ Feature after 30s re-check | Stop; report keys + manual `jira issue edit -P … </dev/null>`; do not create tasks |
@@ -514,6 +589,7 @@ Feature created:
 
 Jira:           https://redhat.atlassian.net/browse/<KEY>
 Component:      <component>
+Fix version:    <version> | backlog (unset)
 Labels:         OSAC[, osac-ux, osac-ui if UI work][, customer, customer:<name>]
 Bootstrap epic: https://redhat.atlassian.net/browse/<EPIC_KEY>
 Bootstrap tasks:
@@ -549,5 +625,7 @@ Features should include these sections (in `$BODY`):
 - Jira hierarchy: Feature → Bootstrap epic → gate tasks (PRD, Design, [UX Design, UI Design])
 - Bootstrap epic: create without `-P`, then `jira issue edit -P` — Epic create with `-P` on a Feature parent returns HTTP 400; use `</dev/null` on all jira create/edit to avoid stdin hangs (jira-cli#948)
 - Gate tasks track documentation milestones, not implementation work
+- **Fix version:** set on the Feature only (via confirm gate + post-create edit).
+  Bootstrap epic and gate tasks never receive `fixVersion`.
 - Temp files: source `tools/jira-safe-create.sh`; call `add_temp` in the parent shell after each `new_temp` — see `jira-task-management` Safe create pattern
 - jira-cli handles markdown-to-ADF conversion automatically
