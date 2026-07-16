@@ -223,7 +223,7 @@ Canonical skill definitions live in `skills/` (committed OSAC skills plus bootst
 - `make skillsaw` — local, on-demand (`uvx --from skillsaw==$(SKILLSAW_VERSION) skillsaw lint . --strict --no-baseline`)
 - **No pre-commit, no git hooks** — this repo has no root `.pre-commit-config.yaml`; skillsaw never runs automatically on `git commit`/`git push`. CI is the only gate. Keep `Makefile`'s `SKILLSAW_VERSION` and `.github/workflows/skillsaw.yml`'s `version:` input in sync when bumping.
 - **CI** — `stbenjam/skillsaw` action on PRs (same `.skillsaw.yaml`; fixed command, not `Makefile`); `skillsaw-review` workflow posts inline PR comments from the lint report (no PR code execution in the review job)
-- Single skill: `skillsaw lint --strict --no-baseline skills/<name>/` using the version pinned in `Makefile`'s `SKILLSAW_VERSION`
+- Single skill: `uvx --from skillsaw==0.16.0 skillsaw lint --strict --no-baseline skills/<name>/` (match `SKILLSAW_VERSION` in `Makefile`)
 
 Skillsaw enforces [Agent Skills](https://agentskills.io/specification) structure (frontmatter, naming) and content quality heuristics. **Do not rewrite skill semantics just to pass lint** — tune `.skillsaw.yaml` for false positives or fix with backticks (see below).
 
