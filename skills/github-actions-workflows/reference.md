@@ -451,3 +451,37 @@ to any test/verification script, not just the workflows it exercises:
     done < "${TARGETS_FILE}"
   fi
   ```
+
+- **`if ! some_function; then` suspends `set -e` for the function's
+  *entire* body, not just its final exit status** - the inverse problem
+  from the process-substitution one above, and useful for exactly the case
+  it causes trouble in: a multi-step per-item loop body (call a script,
+  `cp` a result, `jq`-append a summary) where one step's failure shouldn't
+  abort the whole loop, but you still want each step's own failure caught
+  and handled rather than silently ignored. Move the risky calls into a
+  function, explicitly check each one's exit status *inside* the function
+  (they won't trip `errexit` on their own once the function itself is
+  invoked from an `if !`/`&&`/`||` context), and set/return whatever the
+  caller needs to track:
+
+  ```bash
+  # Called as `if ! process_one_run ...; then` - every command below runs
+  # to completion regardless of an earlier one failing, since -e is
+  # suspended for the whole function in that calling context. Counters
+  # referenced here (not `local`) update the loop's own copies.
+  process_one_run() {
+    if ! scan-run-logs.sh "$1"; then SKIPPED_SCANS=$((SKIPPED_SCANS+1)); return 0; fi
+    if ! cp -r "$src" "$dst"; then PROCESSING_FAILURES=$((PROCESSING_FAILURES+1)); return 0; fi
+    ...
+  }
+  for item in "${ITEMS[@]}"; do
+    process_one_run "${item}"  # a plain call here would NOT suspend -e
+  done
+  ```
+
+  Found on `osac-test-infra` PR #182's `audit-workflow-logs.yml`: the
+  per-run audit loop called `scan-run-logs.sh`, then `cp`, then `jq`, as
+  plain commands - a failure on any of them for run N aborted the whole
+  step, which also meant losing the `flagged-count` output (and therefore
+  the tracking-issue report) for every leak already found on runs 1..N-1,
+  not just failing to process run N itself.
