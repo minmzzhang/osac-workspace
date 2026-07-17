@@ -29,7 +29,11 @@ done
 echo
 echo "== actionlint on embedded workflow_run gate template (SKILL.md) =="
 if command -v actionlint &>/dev/null; then
-  tmp_yaml="$(mktemp /tmp/gha-skill-template.XXXXXX.yaml)"
+  # Plain mktemp (no fixed /tmp/<name>.XXXXXX prefix) — keeps the temp file
+  # under $TMPDIR with a fully random name, matching the bash -n path above
+  # that avoids predictable world-writable-tmp-dir-adjacent filenames.
+  tmp_yaml="$(mktemp)"
+  trap 'rm -f "$tmp_yaml"' EXIT
   awk '/^```yaml$/{flag=1; next} /^```$/{if(flag){flag=0; exit}} flag' \
     "$SKILL_DIR/SKILL.md" > "$tmp_yaml"
   if [ ! -s "$tmp_yaml" ]; then
@@ -40,6 +44,7 @@ if command -v actionlint &>/dev/null; then
     fail "embedded template - see actionlint output above"
   fi
   rm -f "$tmp_yaml"
+  trap - EXIT
 else
   echo "  skip: actionlint not installed (https://github.com/rhysd/actionlint)"
 fi

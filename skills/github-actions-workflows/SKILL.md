@@ -1,6 +1,9 @@
 ---
 name: github-actions-workflows
 description: Create or edit GitHub Actions workflow files (.github/workflows/*.yaml) with security and maintainability best practices applied from the start, instead of discovering them one CodeRabbit review round at a time. Covers least-privilege permissions, SHA-pinned actions, injection-safe env-var handling, semver/tag validation, force-push-safe release gating, and extracting shared bash into scripts. Use when creating a new workflow, adding a job/step to an existing one, wiring up a workflow_run gate, or setting up any tag/release automation.
+globs:
+  - ".github/workflows/*.yaml"
+  - ".github/workflows/*.yml"
 ---
 
 # GitHub Actions Workflows
@@ -27,6 +30,10 @@ Run through this for every new or edited workflow file:
       A workflow-level `env:` block is already auto-injected as a real shell
       var into every `run:` step - reference it as `"$VAR"` directly, don't
       redundantly re-map it via a step-level `env: VAR: ${{ env.VAR }}`.
+      This `env:` routing rule is for `run:` blocks only - `${{ }}` in YAML
+      contexts like `outputs:`, `if:`, and `with:` is correct and required
+      (those keys cannot read shell `env:`). Do not "fix" those away.
+
 - [ ] **Pin *every* action to a full commit SHA**, not just the well-known
       ones. `actions/checkout` gets fixed first and often the last one in the
       same job (e.g. `azure/setup-helm@v5`) gets missed:
